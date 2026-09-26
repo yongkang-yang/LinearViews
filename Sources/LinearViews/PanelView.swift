@@ -325,10 +325,12 @@ private struct Notice: View {
     }
 }
 
+@MainActor
 func openInBrowser(_ issue: Issue) {
     if let url = URL(string: issue.url) { NSWorkspace.shared.open(url) }
 }
 
+@MainActor
 func copyLink(_ issue: Issue) {
     NSPasteboard.general.clearContents()
     NSPasteboard.general.setString(issue.url, forType: .string)
