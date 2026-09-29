@@ -109,9 +109,10 @@ public enum IssueList {
     }
 
     /// Filters by the search text across title, identifier, status, project
-    /// and assignee, drops finished issues if asked, and sorts. Ties keep the
-    /// view's own order.
-    public static func visible(_ issues: [Issue], query: String, sortKey: SortKey, hideDone: Bool) -> [Issue] {
+    /// and assignee, drops finished issues if asked, and sorts by each key in
+    /// turn: a tie on the first goes to the second, and so on. Ties on every
+    /// key keep the view's own order.
+    public static func visible(_ issues: [Issue], query: String, sortKeys: [SortKey], hideDone: Bool) -> [Issue] {
         let needle = query.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         let filtered = issues.enumerated().filter { _, issue in
             if hideDone && issue.isDone { return false }
@@ -120,7 +121,10 @@ public enum IssueList {
                 .contains { $0?.lowercased().contains(needle) ?? false }
         }
         return filtered.sorted { lhs, rhs in
-            ordered(lhs.element, rhs.element, by: sortKey) ?? (lhs.offset < rhs.offset)
+            for key in sortKeys {
+                if let result = ordered(lhs.element, rhs.element, by: key) { return result }
+            }
+            return lhs.offset < rhs.offset
         }.map(\.element)
     }
 }

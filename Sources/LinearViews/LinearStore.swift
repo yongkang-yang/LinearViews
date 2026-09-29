@@ -11,13 +11,22 @@ final class LinearStore: ObservableObject {
         static let defaultView = "defaultView"
         static let selectedView = "selectedView"
         static let sortKey = "issueSortKey"
+        static let thenSortKey = "issueThenSortKey"
         static let hideDone = "hideDoneIssues"
     }
 
     @Published var views: [SavedView] { didSet { saveViews() } }
     @Published var defaultViewID: UUID? { didSet { UserDefaults.standard.set(defaultViewID?.uuidString, forKey: Keys.defaultView) } }
     @Published private(set) var selectedViewID: UUID?
-    @Published var sortKey: SortKey { didSet { UserDefaults.standard.set(sortKey.rawValue, forKey: Keys.sortKey) } }
+    @Published var sortKey: SortKey {
+        didSet {
+            UserDefaults.standard.set(sortKey.rawValue, forKey: Keys.sortKey)
+            // The second key is never the first one again.
+            if thenSortKey == sortKey { thenSortKey = .manual }
+        }
+    }
+    /// Orders issues the first key ties on; `.manual` means none.
+    @Published var thenSortKey: SortKey { didSet { UserDefaults.standard.set(thenSortKey.rawValue, forKey: Keys.thenSortKey) } }
     @Published var hideDone: Bool { didSet { UserDefaults.standard.set(hideDone, forKey: Keys.hideDone) } }
     @Published var apiKey: String {
         didSet {
@@ -60,6 +69,7 @@ final class LinearStore: ObservableObject {
         }
         selectedViewID = defaults.string(forKey: Keys.selectedView).flatMap(UUID.init)
         sortKey = SortKey(rawValue: defaults.string(forKey: Keys.sortKey) ?? "") ?? .manual
+        thenSortKey = SortKey(rawValue: defaults.string(forKey: Keys.thenSortKey) ?? "") ?? .manual
         hideDone = defaults.bool(forKey: Keys.hideDone)
         apiKey = Keychain.read(Self.apiKeyAccount)
         saveViews()
@@ -74,6 +84,13 @@ final class LinearStore: ObservableObject {
 
     /// The views that can be shown; half-filled rows in Settings are skipped.
     var usableViews: [SavedView] { views.filter { $0.problem == nil } }
+
+    /// The sort keys in order. A second key only applies under a first one,
+    /// and never repeats it.
+    var sortKeys: [SortKey] {
+        guard sortKey != .manual else { return [] }
+        return thenSortKey == .manual || thenSortKey == sortKey ? [sortKey] : [sortKey, thenSortKey]
+    }
 
     var current: SavedView? { currentView(usableViews, selected: selectedViewID, defaultID: defaultViewID) }
 

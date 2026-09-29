@@ -74,57 +74,48 @@ struct IssueDetailView: View {
                 Menu {
                     options(store.states[teamID]) { states in
                         ForEach(states) { state in
-                            Button { change { try await apply(state: state, $0) } } label: {
-                                check(state.name, state.id == issue.state.id)
-                            }
+                            option(state.name, state.id == issue.state.id) { change { try await apply(state: state, $0) } }
                         }
                     }
                 } label: {
-                    HStack(spacing: 6) {
-                        StateDot(color: issue.state.color, type: issue.state.type)
-                        Text(issue.state.name)
-                    }
+                    field(issue.state.name) { StateDot(color: issue.state.color, type: issue.state.type) }
                 }
             }
             row("Priority") {
                 Menu {
-                    ForEach(Priority.options, id: \.value) { option in
-                        Button { change { try await apply(priority: option.value, $0) } } label: {
-                            check(option.label, option.value == issue.priority)
-                        }
+                    ForEach(Priority.options, id: \.value) { level in
+                        option(level.label, level.value == issue.priority) { change { try await apply(priority: level.value, $0) } }
                     }
                 } label: {
-                    Text(issue.priorityLabel)
+                    field(issue.priorityLabel) {
+                        PriorityGlyph(priority: issue.priority, label: issue.priorityLabel, showsNone: true)
+                    }
                 }
             }
             row("Assignee") {
                 Menu {
-                    Button { change { try await apply(assignee: nil, $0) } } label: { check("Unassigned", issue.assignee == nil) }
+                    option("Unassigned", issue.assignee == nil) { change { try await apply(assignee: nil, $0) } }
                     Divider()
                     options(store.members[teamID]) { members in
                         ForEach(members, id: \.id) { member in
-                            Button { change { try await apply(assignee: member, $0) } } label: {
-                                check(member.name, member.id == issue.assignee?.id)
-                            }
+                            option(member.name, member.id == issue.assignee?.id) { change { try await apply(assignee: member, $0) } }
                         }
                     }
                 } label: {
-                    Text(issue.assignee?.name ?? "Unassigned")
+                    field(issue.assignee?.name ?? "Unassigned", dimmed: issue.assignee == nil) { symbol("person.crop.circle") }
                 }
             }
             row("Project") {
                 Menu {
-                    Button { change { try await apply(project: nil, $0) } } label: { check("No Project", issue.project == nil) }
+                    option("No Project", issue.project == nil) { change { try await apply(project: nil, $0) } }
                     Divider()
                     options(store.projects[teamID]) { projects in
                         ForEach(projects, id: \.id) { project in
-                            Button { change { try await apply(project: project, $0) } } label: {
-                                check(project.name, project.id == issue.project?.id)
-                            }
+                            option(project.name, project.id == issue.project?.id) { change { try await apply(project: project, $0) } }
                         }
                     }
                 } label: {
-                    Text(issue.project?.name ?? "No project")
+                    field(issue.project?.name ?? "No project", dimmed: issue.project == nil) { symbol("cube") }
                 }
             }
             row("Due") {
@@ -134,9 +125,11 @@ struct IssueDetailView: View {
                         pickingDate = true
                     } label: {
                         if let due = issue.dueDate {
-                            DueLabel(date: due, isDone: issue.isDone)
+                            field { symbol("calendar") } value: {
+                                DueLabel(date: due, isDone: issue.isDone)
+                            }
                         } else {
-                            Text("No due date").foregroundStyle(.secondary)
+                            field("No due date", dimmed: true) { symbol("calendar") }
                         }
                     }
                     .buttonStyle(.plain)
@@ -186,7 +179,7 @@ struct IssueDetailView: View {
         GridRow {
             Text(title)
                 .foregroundStyle(.secondary)
-                .gridColumnAlignment(.trailing)
+                .gridColumnAlignment(.leading)
             content()
                 .fixedSize()
         }
@@ -204,13 +197,30 @@ struct IssueDetailView: View {
         }
     }
 
-    @ViewBuilder
-    private func check(_ title: String, _ selected: Bool) -> some View {
-        if selected {
-            Label(title, systemImage: "checkmark")
-        } else {
-            Text(title)
+    /// A menu item with the menu's own checkmark column, so every title
+    /// lines up whether it's the chosen one or not. Choosing the current one
+    /// again changes nothing.
+    private func option(_ title: String, _ selected: Bool, action: @escaping () -> Void) -> some View {
+        Toggle(title, isOn: Binding(get: { selected }, set: { if $0 { action() } }))
+    }
+
+    /// A field's value behind its icon; every field has one, in a column of
+    /// the same width, so the values line up.
+    private func field<Icon: View>(_ text: String, dimmed: Bool = false, @ViewBuilder icon: () -> Icon) -> some View {
+        field(icon: icon) { Text(text).foregroundStyle(dimmed ? .secondary : .primary) }
+    }
+
+    private func field<Icon: View, Value: View>(@ViewBuilder icon: () -> Icon, @ViewBuilder value: () -> Value) -> some View {
+        HStack(spacing: 6) {
+            icon().frame(width: 14)
+            value()
         }
+    }
+
+    private func symbol(_ name: String) -> some View {
+        Image(systemName: name)
+            .font(.system(size: 11))
+            .foregroundStyle(.secondary)
     }
 
     // MARK: Edits

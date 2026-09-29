@@ -102,3 +102,11 @@ public func date(fromTimeless value: String, calendar: Calendar = .current) -> D
     guard parts.count == 3 else { return nil }
     return calendar.date(from: DateComponents(year: parts[0], month: parts[1], day: parts[2]))
 }
+
+
+/// A due date for the list: "09-30" in the current year, the full
+/// "2027-01-05" otherwise, since the year is the same on nearly every row.
+public func compactDueDate(_ value: String, now: Date = Date(), calendar: Calendar = .current) -> String {
+    let year = String(format: "%04d-", calendar.component(.year, from: now))
+    return value.count == 10 && value.hasPrefix(year) ? String(value.dropFirst(year.count)) : value
+}

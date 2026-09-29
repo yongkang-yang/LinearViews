@@ -209,16 +209,30 @@ final class IssueListTests: XCTestCase {
         let issues = [issue("c", due: "2026-10-02", priority: 0, type: "started"),
                       issue("a", due: nil, priority: 2, type: "backlog"),
                       issue("b", due: "2026-10-01", priority: 1, type: "completed")]
-        XCTAssertEqual(IssueList.visible(issues, query: "", sortKey: .manual, hideDone: false).map(\.id), ["c", "a", "b"])
-        XCTAssertEqual(IssueList.visible(issues, query: "", sortKey: .dueDate, hideDone: false).map(\.id), ["b", "c", "a"])
-        XCTAssertEqual(IssueList.visible(issues, query: "", sortKey: .priority, hideDone: false).map(\.id), ["b", "a", "c"])
-        XCTAssertEqual(IssueList.visible(issues, query: "", sortKey: .status, hideDone: false).map(\.id), ["a", "c", "b"])
-        XCTAssertEqual(IssueList.visible(issues, query: "", sortKey: .title, hideDone: true).map(\.id), ["a", "c"])
+        XCTAssertEqual(IssueList.visible(issues, query: "", sortKeys: [.manual], hideDone: false).map(\.id), ["c", "a", "b"])
+        XCTAssertEqual(IssueList.visible(issues, query: "", sortKeys: [.dueDate], hideDone: false).map(\.id), ["b", "c", "a"])
+        XCTAssertEqual(IssueList.visible(issues, query: "", sortKeys: [.priority], hideDone: false).map(\.id), ["b", "a", "c"])
+        XCTAssertEqual(IssueList.visible(issues, query: "", sortKeys: [.status], hideDone: false).map(\.id), ["a", "c", "b"])
+        XCTAssertEqual(IssueList.visible(issues, query: "", sortKeys: [.title], hideDone: true).map(\.id), ["a", "c"])
+    }
+
+    func testSortsByASecondKeyWithinTiesOfTheFirst() {
+        let issues = [issue("a", due: "2026-10-01", priority: 3),
+                      issue("b", due: "2026-10-02", priority: 1),
+                      issue("c", due: "2026-10-01", priority: 1),
+                      issue("d", due: nil, priority: 2),
+                      issue("e", due: "2026-10-01", priority: 3)]
+        XCTAssertEqual(IssueList.visible(issues, query: "", sortKeys: [.dueDate, .priority], hideDone: false).map(\.id),
+                       ["c", "a", "e", "b", "d"])
+        XCTAssertEqual(IssueList.visible(issues, query: "", sortKeys: [.priority, .dueDate], hideDone: false).map(\.id),
+                       ["c", "b", "d", "a", "e"])
+        XCTAssertEqual(IssueList.visible(issues, query: "", sortKeys: [.dueDate, .manual], hideDone: false).map(\.id),
+                       ["a", "c", "e", "b", "d"])
     }
 
     func testSearchesStatusToo() {
         let issues = [issue("a", type: "backlog"), issue("b")]
-        XCTAssertEqual(IssueList.visible(issues, query: " BACKLOG ", sortKey: .manual, hideDone: false).map(\.id), ["a"])
+        XCTAssertEqual(IssueList.visible(issues, query: " BACKLOG ", sortKeys: [.manual], hideDone: false).map(\.id), ["a"])
     }
 
     func testTimelessDateUsesTheLocalCalendar() {
@@ -226,5 +240,14 @@ final class IssueListTests: XCTestCase {
         calendar.timeZone = TimeZone(identifier: "Asia/Shanghai")!
         let date = calendar.date(from: DateComponents(year: 2026, month: 9, day: 10, hour: 0, minute: 30))!
         XCTAssertEqual(timelessDate(date, calendar: calendar), "2026-09-10")
+    }
+
+    func testCompactDueDateDropsOnlyTheCurrentYear() {
+        var calendar = Calendar(identifier: .gregorian)
+        calendar.timeZone = TimeZone(identifier: "Europe/Amsterdam")!
+        let now = calendar.date(from: DateComponents(year: 2026, month: 9, day: 29, hour: 12))!
+        XCTAssertEqual(compactDueDate("2026-09-30", now: now, calendar: calendar), "09-30")
+        XCTAssertEqual(compactDueDate("2027-01-05", now: now, calendar: calendar), "2027-01-05")
+        XCTAssertEqual(compactDueDate("2025-12-31", now: now, calendar: calendar), "2025-12-31")
     }
 }

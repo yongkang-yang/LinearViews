@@ -42,7 +42,7 @@ struct PanelView: View {
     private var loaded: LinearStore.Loaded { store.loaded(for: store.current) }
 
     private var issues: [Issue] {
-        IssueList.visible(loaded.result?.issues ?? [], query: search, sortKey: store.sortKey, hideDone: store.hideDone)
+        IssueList.visible(loaded.result?.issues ?? [], query: search, sortKeys: store.sortKeys, hideDone: store.hideDone)
     }
 
     private var list: some View {
@@ -89,7 +89,8 @@ struct PanelView: View {
             .help("Linear View")
 
             if let result = loaded.result {
-                Text("\(issues.count) of \(result.issues.count)")
+                // "of" only when searching or hiding has left some out.
+                Text(issues.count == result.issues.count ? "\(issues.count)" : "\(issues.count) of \(result.issues.count)")
                     .font(.system(size: 11).monospacedDigit())
                     .foregroundStyle(.tertiary)
             }
@@ -108,14 +109,24 @@ struct PanelView: View {
 
     private var sortMenu: some View {
         Menu {
-            Picker("Sort by", selection: $store.sortKey) {
+            Picker("Sort By", selection: $store.sortKey) {
                 ForEach(SortKey.allCases, id: \.self) { Text($0.title).tag($0) }
             }
             .pickerStyle(.inline)
+            // Breaks ties in the first key, e.g. due date, then priority.
+            // "None" keeps the view's order within a tie.
+            Picker("Then By", selection: $store.thenSortKey) {
+                Text("None").tag(SortKey.manual)
+                ForEach(SortKey.allCases.filter { $0 != .manual && $0 != store.sortKey }, id: \.self) {
+                    Text($0.title).tag($0)
+                }
+            }
+            .pickerStyle(.inline)
+            .disabled(store.sortKey == .manual)
             Divider()
             Toggle("Hide Completed & Canceled", isOn: $store.hideDone)
         } label: {
-            Image(systemName: store.hideDone || store.sortKey != .manual
+            Image(systemName: store.hideDone || !store.sortKeys.isEmpty
                   ? "line.3.horizontal.decrease.circle.fill" : "line.3.horizontal.decrease")
                 .font(.system(size: 11, weight: .medium))
                 .frame(width: Metrics.iconButton, height: Metrics.iconButton)
@@ -220,23 +231,25 @@ private struct IssueRow: View {
 
     var body: some View {
         HStack(spacing: 8) {
+            PriorityGlyph(priority: issue.priority, label: issue.priorityLabel)
+            // The dot is the status; its name is a hover away.
             StateDot(color: issue.state.color, type: issue.state.type)
-            Text(issue.title)
-                .font(.system(size: 12))
-                .lineLimit(1)
+                .help(issue.state.name)
+            // In a column of its own, as Linear's list has it; the title
+            // truncates before the identifier ever does.
             Text(issue.identifier)
                 .font(.system(size: 11).monospacedDigit())
                 .foregroundStyle(.tertiary)
                 .lineLimit(1)
-                .layoutPriority(-1)
+                .fixedSize()
+                .frame(minWidth: Metrics.idColumn, alignment: .leading)
+            Text(issue.title)
+                .font(.system(size: 12))
+                .lineLimit(1)
             Spacer(minLength: 6)
             if let due = issue.dueDate {
-                DueLabel(date: due, isDone: issue.isDone)
+                DueLabel(date: due, isDone: issue.isDone, compact: true)
             }
-            Text(issue.state.name)
-                .font(.system(size: 11))
-                .foregroundStyle(.secondary)
-                .lineLimit(1)
         }
         .padding(.horizontal, 8)
         .frame(height: Metrics.rowHeight)
@@ -248,18 +261,59 @@ private struct IssueRow: View {
     }
 }
 
-/// A due date, in red once it has passed on an open issue.
+/// A due date, in red once it has passed on an open issue. No icon of its
+/// own: the detail view puts its calendar in the icon column.
 struct DueLabel: View {
     let date: String
     let isDone: Bool
+    /// The list's form, without the year while it's this one.
+    var compact = false
 
     var body: some View {
         let overdue = !isDone && date < timelessDate(Date())
-        Label(date, systemImage: "calendar")
-            .labelStyle(.titleAndIcon)
+        Text(compact ? compactDueDate(date) : date)
             .font(.system(size: 11).monospacedDigit())
             .foregroundStyle(overdue ? AnyShapeStyle(Color.red) : AnyShapeStyle(.secondary))
-            .help("Due date")
+            .help("Due \(date)")
+    }
+}
+
+/// Linear's priority glyph: signal bars filled to the level, Urgent as an
+/// orange badge. No priority is blank in the list and three faint bars where
+/// every field shows an icon. Always the same width, so what follows lines up.
+struct PriorityGlyph: View {
+    let priority: Int
+    let label: String
+    var showsNone = false
+
+    var body: some View {
+        Group {
+            switch priority {
+            case 1:
+                RoundedRectangle(cornerRadius: 3, style: .continuous)
+                    .fill(Color.orange)
+                    .overlay(Text("!").font(.system(size: 9, weight: .heavy)).foregroundStyle(.white))
+                    .frame(width: 12, height: 12)
+            case 2, 3, 4:
+                bars(filled: 5 - priority)
+            case _ where showsNone:
+                bars(filled: 0)
+            default:
+                Color.clear
+            }
+        }
+        .frame(width: 12, height: 12)
+        .help(priority == 0 ? "" : label)
+    }
+
+    private func bars(filled: Int) -> some View {
+        HStack(alignment: .bottom, spacing: 1.5) {
+            ForEach(0..<3) { bar in
+                RoundedRectangle(cornerRadius: 0.75)
+                    .fill(Color.primary.opacity(bar < filled ? 0.7 : 0.2))
+                    .frame(width: 2.5, height: CGFloat(4 + bar * 3))
+            }
+        }
     }
 }
 
