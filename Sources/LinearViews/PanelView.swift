@@ -16,7 +16,11 @@ struct PanelView: View {
     @State private var search = ""
     @State private var selection: String?
     @State private var detail: Issue?
-    @FocusState private var searchFocused: Bool
+    /// The search field stays folded into its icon until it's asked for.
+    @State private var searching = false
+    @FocusState private var focus: Focus?
+
+    private enum Focus { case list, search }
 
     var body: some View {
         ZStack {
@@ -24,7 +28,7 @@ struct PanelView: View {
                 .opacity(detail == nil ? 1 : 0)
                 .allowsHitTesting(detail == nil)
             if let detail {
-                IssueDetailView(store: store, issue: detail, back: { self.detail = nil; searchFocused = true })
+                IssueDetailView(store: store, issue: detail, back: { self.detail = nil; restoreFocus() })
                     .transition(.move(edge: .trailing).combined(with: .opacity))
             }
         }
@@ -33,8 +37,16 @@ struct PanelView: View {
         .glassSurface(in: RoundedRectangle(cornerRadius: Metrics.panelRadius, style: .continuous), fallback: .regularMaterial)
         .onReceive(NotificationCenter.default.publisher(for: .panelDidShow)) { _ in
             detail = nil
-            searchFocused = true
+            restoreFocus()
         }
+        // Left empty, the field folds back into its icon.
+        .onChange(of: focus) { _, focus in
+            if focus != .search, search.isEmpty { searching = false }
+        }
+    }
+
+    private func restoreFocus() {
+        focus = searching ? .search : .list
     }
 
     // MARK: List
@@ -48,55 +60,67 @@ struct PanelView: View {
     private var list: some View {
         VStack(spacing: 10) {
             header
-            searchField
             content
         }
         .padding(Metrics.panelPadding)
+        // Holds the keyboard while the search field is folded away, so the
+        // arrows and ↩ still walk the list. `.edit`, because `.activate`
+        // only takes focus with Keyboard Navigation switched on.
+        .focusable(interactions: .edit)
+        .focusEffectDisabled()
+        .focused($focus, equals: .list)
+        .onKeyPress(.downArrow) { onList { move(1) } }
+        .onKeyPress(.upArrow) { onList { move(-1) } }
+        .onKeyPress(.return) { onList(openSelection) }
+        .background {
+            Button("", action: startSearch)
+                .keyboardShortcut("f", modifiers: .command)
+                .disabled(detail != nil)
+                .opacity(0)
+                .accessibilityHidden(true)
+        }
+    }
+
+    /// Keys from the search field pass through here too; it has its own.
+    private func onList(_ action: () -> Void) -> KeyPress.Result {
+        guard focus == .list else { return .ignored }
+        action()
+        return .handled
+    }
+
+    private func startSearch() {
+        // Unfolding, the field takes the focus itself as it appears; asking
+        // for it before then would land nowhere and fold it straight back.
+        if searching { focus = .search } else { searching = true }
+    }
+
+    private func endSearch() {
+        search = ""
+        searching = false
+        focus = .list
     }
 
     private var header: some View {
         HStack(spacing: 8) {
-            Menu {
-                ForEach(store.usableViews) { view in
-                    Button {
-                        search = ""
-                        store.select(view)
-                    } label: {
-                        if view.id == store.current?.id {
-                            Label(view.name, systemImage: "checkmark")
-                        } else {
-                            Text(view.name)
-                        }
-                    }
-                }
-            } label: {
-                HStack(spacing: 5) {
-                    Text(store.current?.name ?? "Linear Views")
-                        .font(.system(size: 13, weight: .semibold))
-                    Image(systemName: "chevron.down")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(.secondary)
-                }
-                .padding(.horizontal, 12)
-                .frame(height: Metrics.iconButton)
-                .contentShape(Capsule())
-                .glassSurface(in: Capsule(), interactive: true)
+            if searching {
+                searchField
+            } else {
+                viewMenu
             }
-            .menuStyle(.button)
-            .buttonStyle(.plain)
-            .menuIndicator(.hidden)
-            .fixedSize()
-            .help("Linear View")
 
             if let result = loaded.result {
                 // "of" only when searching or hiding has left some out.
                 Text(issues.count == result.issues.count ? "\(issues.count)" : "\(issues.count) of \(result.issues.count)")
                     .font(.system(size: 11).monospacedDigit())
                     .foregroundStyle(.tertiary)
+                    .fixedSize()
             }
-            Spacer()
+            if !searching { Spacer() }
             GlassGroup {
                 HStack(spacing: 6) {
+                    if !searching {
+                        GlassIconButton(symbol: "magnifyingglass", help: "Search This View (⌘F)", action: startSearch)
+                    }
                     sortMenu
                     GlassIconButton(symbol: "arrow.clockwise", help: "Refresh View (⌘R)", spinning: loaded.isLoading) {
                         store.refresh()
@@ -105,6 +129,40 @@ struct PanelView: View {
                 }
             }
         }
+    }
+
+    private var viewMenu: some View {
+        Menu {
+            ForEach(store.usableViews) { view in
+                Button {
+                    search = ""
+                    store.select(view)
+                } label: {
+                    if view.id == store.current?.id {
+                        Label(view.name, systemImage: "checkmark")
+                    } else {
+                        Text(view.name)
+                    }
+                }
+            }
+        } label: {
+            HStack(spacing: 5) {
+                Text(store.current?.name ?? "Linear Views")
+                    .font(.system(size: 13, weight: .semibold))
+                Image(systemName: "chevron.down")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(.secondary)
+            }
+            .padding(.horizontal, 12)
+            .frame(height: Metrics.iconButton)
+            .contentShape(Capsule())
+            .glassSurface(in: Capsule(), interactive: true)
+        }
+        .menuStyle(.button)
+        .buttonStyle(.plain)
+        .menuIndicator(.hidden)
+        .fixedSize()
+        .help("Linear View")
     }
 
     private var sortMenu: some View {
@@ -145,18 +203,27 @@ struct PanelView: View {
             Image(systemName: "magnifyingglass")
                 .font(.system(size: 11))
                 .foregroundStyle(.secondary)
-            TextField("Search all issues in this view…", text: $search)
+            TextField("Search this view…", text: $search)
                 .textFieldStyle(.plain)
                 .font(.system(size: 12))
-                .focused($searchFocused)
+                .focused($focus, equals: .search)
                 .onSubmit(openSelection)
                 .onKeyPress(.downArrow) { move(1); return .handled }
                 .onKeyPress(.upArrow) { move(-1); return .handled }
+                .onKeyPress(.escape) { endSearch(); return .handled }
                 .onChange(of: search) { _, _ in selection = issues.first?.id }
+            Button(action: endSearch) {
+                Image(systemName: "xmark.circle.fill")
+                    .font(.system(size: 11))
+                    .foregroundStyle(.tertiary)
+            }
+            .buttonStyle(.plain)
+            .help("Close Search (Esc)")
         }
-        .padding(.horizontal, 12)
-        .frame(height: 32)
+        .padding(.horizontal, 10)
+        .frame(height: Metrics.iconButton)
         .glassSurface(in: Capsule())
+        .onAppear { focus = .search }
     }
 
     @ViewBuilder
