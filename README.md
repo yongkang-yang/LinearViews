@@ -78,5 +78,5 @@ drawn by `swift Scripts/make-icon.swift`.
 
 ## License
 
-[GPL-3.0-or-later](LICENSE). Linear and its logo are trademarks of Linear Orbit,
+[MIT](LICENSE). Linear and its logo are trademarks of Linear Orbit,
 Inc.; this is an unofficial client.
